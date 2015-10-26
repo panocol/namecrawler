@@ -1,41 +1,48 @@
 package main
 
 import (
-	"fmt"
 	"net/http"
-	"os"
 //	"io/ioutil"
 	"golang.org/x/net/html"
 	"io"
+	"runtime"
+	"fmt"
 )
 
-const START = "http://www.yahoo.com"
+const START = "https://ece.osu.edu/news/2015/10/texas-inst.-scholars-program"
+var visited = make(map[string]bool)
+var queue = make(chan string)
 
 func main() {
+	numCPU := runtime.NumCPU()
+	runtime.GOMAXPROCS(numCPU)
 
-	crawl(START)
+	go func() {
+		queue <- START
+	}()
+
+	for url := range queue {
+		go crawl(url)
+	}
 
 }
 
 func crawl(url string) {
+	fmt.Printf("Crawling %s\n", url)
+	visited[url] = true;
 	response, err := http.Get(url)
 
 	if err != nil {
 		fmt.Println("Error fetching the file: ", err)
-		os.Exit(1)
+		return
 	}
 
 	b := response.Body
-	links := parse(b)
-
-	for _, l := range links {
-		println(l)
-	}
+	parse(b, url)
 }
 
-func parse(r io.Reader) []string {
+func parse(r io.Reader, url string) {
 	z := html.NewTokenizer(r)
-	links := make([]string, 0)
 
 	Loop:
 	for {
@@ -52,17 +59,15 @@ func parse(r io.Reader) []string {
 
 			if token.Data == "a" {
 				for _, attr := range token.Attr {
-					if attr.Key == "href" && len(attr.Val) >= 4 && attr.Val[:4] == "http" {
-						links = append(links, attr.Val)
+					link := attr.Val
+					if attr.Key == "href" && len(link) >= 4 && link[:4] == "http" {
+						fmt.Printf("Found Link %s from url %s\n", link, url)
+						if !visited[link] {
+							go func() { queue <- link }()
+						}
 					}
 				}
-
 			}
-
-
 		}
-
 	}
-
-	return links
 }
