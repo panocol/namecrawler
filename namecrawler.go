@@ -7,11 +7,20 @@ import (
 	"io"
 	"runtime"
 	"fmt"
+	"time"
+	"gopkg.in/mgo.v2"
+	"gopkg.in/mgo.v2/bson"
 )
 
 const START = "https://ece.osu.edu/news/2015/10/texas-inst.-scholars-program"
 var visited = make(map[string]bool)
 var queue = make(chan string)
+
+type page struct {
+	Id           bson.ObjectId `bson:"_id,omitempty"`
+	Url          string
+	ResponseTime float64
+}
 
 func main() {
 	numCPU := runtime.NumCPU()
@@ -28,14 +37,18 @@ func main() {
 }
 
 func crawl(url string) {
-	fmt.Printf("Crawling %s\n", url)
-	visited[url] = true;
+
+	start := time.Now()
 	response, err := http.Get(url)
+	elapsed := time.Since(start).Seconds()
 
 	if err != nil {
 		fmt.Println("Error fetching the file: ", err)
 		return
 	}
+
+	visited[url] = true
+	savePage(url, elapsed)
 
 	b := response.Body
 	parse(b, url)
@@ -61,7 +74,6 @@ func parse(r io.Reader, url string) {
 				for _, attr := range token.Attr {
 					link := attr.Val
 					if attr.Key == "href" && len(link) >= 4 && link[:4] == "http" {
-						fmt.Printf("Found Link %s from url %s\n", link, url)
 						if !visited[link] {
 							go func() { queue <- link }()
 						}
@@ -70,4 +82,26 @@ func parse(r io.Reader, url string) {
 			}
 		}
 	}
+}
+
+func savePage(url string, response float64) bool {
+	db, err := mgo.Dial("mongodb://localhost")
+
+	if err != nil {
+		println("Eror Connecting to Mongo DB");
+		return false
+	} else {
+		defer db.Close()
+	}
+
+	c := db.DB("testdb").C("pages")
+
+	err = c.Insert(&page{Url: url, ResponseTime: response})
+
+	if err != nil {
+		fmt.Printf("Error Inserting to Mongo DB error: %s", err)
+		return false
+	}
+
+	return true
 }
