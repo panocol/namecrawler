@@ -13,8 +13,11 @@ import (
 )
 
 const START = "https://ece.osu.edu/news/2015/10/texas-inst.-scholars-program"
+const MAX_THREADS = 8
+
 var visited = make(map[string]bool)
-var queue = make(chan string)
+var url_queue = make(chan string)
+var notifications = make(chan bool)
 
 type page struct {
 	Id           bson.ObjectId `bson:"_id,omitempty"`
@@ -26,17 +29,32 @@ func main() {
 	numCPU := runtime.NumCPU()
 	runtime.GOMAXPROCS(numCPU)
 
+	var free_threads int = MAX_THREADS
+
 	go func() {
-		queue <- START
+		url_queue <- START
 	}()
 
-	for url := range queue {
-		go crawl(url)
+	for url := range url_queue {
+		fmt.Printf("free threads %d\n", free_threads)
+		if free_threads > 0 {
+			go crawl(url)
+			free_threads--
+		}
+
+		go func() {
+			if <- notifications {
+				free_threads++
+			}
+		}()
 	}
 
 }
 
 func crawl(url string) {
+	defer func () {
+		notifications <- true
+	}()
 
 	start := time.Now()
 	response, err := http.Get(url)
@@ -75,7 +93,7 @@ func parse(r io.Reader, url string) {
 					link := attr.Val
 					if attr.Key == "href" && len(link) >= 4 && link[:4] == "http" {
 						if !visited[link] {
-							go func() { queue <- link }()
+							go func() { url_queue <- link }()
 						}
 					}
 				}
@@ -85,6 +103,7 @@ func parse(r io.Reader, url string) {
 }
 
 func savePage(url string, response float64) bool {
+//	fmt.Printf("Loaded %s in %d seconds\n", url, response)
 	db, err := mgo.Dial("mongodb://localhost")
 
 	if err != nil {
