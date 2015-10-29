@@ -13,7 +13,6 @@ import (
 )
 
 const START = "https://ece.osu.edu/news/2015/10/texas-inst.-scholars-program"
-const MAX_THREADS = 8
 
 var visited = make(map[string]bool)
 var url_queue = make(chan string)
@@ -29,7 +28,8 @@ func main() {
 	numCPU := runtime.NumCPU()
 	runtime.GOMAXPROCS(numCPU)
 
-	var free_threads int = MAX_THREADS
+	// Set the max threads to the number of cores
+	var free_threads int = numCPU
 
 	go func() {
 		url_queue <- START
