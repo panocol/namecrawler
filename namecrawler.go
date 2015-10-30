@@ -2,6 +2,7 @@ package main
 
 import (
 	"net/http"
+	"net/url"
 //	"io/ioutil"
 	"golang.org/x/net/html"
 	"io"
@@ -18,10 +19,13 @@ var visited = make(map[string]bool)
 var url_queue = make(chan string)
 var notifications = make(chan bool)
 
+var hostname = "ece.osu.edu"
+
 type page struct {
 	Id           bson.ObjectId `bson:"_id,omitempty"`
 	Url          string
 	ResponseTime float64
+	FetchDate	 time.Time
 }
 
 func main() {
@@ -36,7 +40,7 @@ func main() {
 	}()
 
 	for url := range url_queue {
-		fmt.Printf("free threads %d\n", free_threads)
+
 		if free_threads > 0 {
 			go crawl(url)
 			free_threads--
@@ -69,10 +73,10 @@ func crawl(url string) {
 	savePage(url, elapsed)
 
 	b := response.Body
-	parse(b, url)
+	parse(b)
 }
 
-func parse(r io.Reader, url string) {
+func parse(r io.Reader) {
 	z := html.NewTokenizer(r)
 
 	Loop:
@@ -92,6 +96,13 @@ func parse(r io.Reader, url string) {
 				for _, attr := range token.Attr {
 					link := attr.Val
 					if attr.Key == "href" && len(link) >= 4 && link[:4] == "http" {
+						s, _ := url.Parse(link)
+
+						if hostname != s.Host {
+							continue
+						}
+
+
 						if !visited[link] {
 							go func() { url_queue <- link }()
 						}
@@ -103,7 +114,6 @@ func parse(r io.Reader, url string) {
 }
 
 func savePage(url string, response float64) bool {
-//	fmt.Printf("Loaded %s in %d seconds\n", url, response)
 	db, err := mgo.Dial("mongodb://localhost")
 
 	if err != nil {
@@ -113,9 +123,9 @@ func savePage(url string, response float64) bool {
 		defer db.Close()
 	}
 
-	c := db.DB("testdb").C("pages")
+	c := db.DB("test").C("pages")
 
-	err = c.Insert(&page{Url: url, ResponseTime: response})
+	err = c.Insert(&page{Url: url, ResponseTime: response, FetchDate: time.Now()})
 
 	if err != nil {
 		fmt.Printf("Error Inserting to Mongo DB error: %s", err)
