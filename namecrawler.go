@@ -11,6 +11,7 @@ import (
 	"time"
 	"gopkg.in/mgo.v2"
 	"gopkg.in/mgo.v2/bson"
+	"os"
 )
 
 const START = "https://ece.osu.edu/news/2015/10/texas-inst.-scholars-program"
@@ -70,7 +71,10 @@ func crawl(url string) {
 	}
 
 	visited[url] = true
-	savePage(url, elapsed)
+	if !savePage(url, elapsed) {
+		fmt.Println("Failed to save a page. Exiting");
+		os.Exit(0)
+	}
 
 	b := response.Body
 	parse(b)
@@ -102,8 +106,8 @@ func parse(r io.Reader) {
 							continue
 						}
 
-
 						if !visited[link] {
+							fmt.Println("Found new page to parse", link)
 							go func() { url_queue <- link }()
 						}
 					}
